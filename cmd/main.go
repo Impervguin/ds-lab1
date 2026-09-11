@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -18,18 +17,19 @@ import (
 )
 
 func main() {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		dsn = "postgres://program:test@localhost:5432/persons?sslmode=disable"
+	cfg, err := NewAppConfig()
+	if err != nil {
+		log.Fatalf("read config: %v", err)
+		return
 	}
 
-	if err := runMigrations(dsn); err != nil {
+	if err := runMigrations(cfg.DatabaseDSN); err != nil {
 		log.Fatalf("run migrations: %v", err)
 	}
 	log.Println("migrations applied successfully")
 
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
+	pool, err := pgxpool.New(ctx, cfg.DatabaseDSN)
 	if err != nil {
 		log.Fatalf("create pgx pool: %v", err)
 	}
@@ -47,13 +47,8 @@ func main() {
 	r.Use(middleware.Recoverer)
 	handler.Register(r)
 
-	addr := os.Getenv("SERVER_ADDR")
-	if addr == "" {
-		addr = ":8081"
-	}
-
-	log.Printf("starting server on %s", addr)
-	if err := http.ListenAndServe(addr, r); err != nil {
+	log.Printf("starting server on %s", cfg.ServerAddr)
+	if err := http.ListenAndServe(cfg.ServerAddr, r); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }
