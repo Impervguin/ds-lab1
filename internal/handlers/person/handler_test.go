@@ -150,11 +150,13 @@ func TestHandler_Get(t *testing.T) {
 }
 
 func TestHandler_Update(t *testing.T) {
-	t.Run("updates person", func(t *testing.T) {
+	t.Run("updates person with all fields", func(t *testing.T) {
 		repo := new(mockPersonRepository)
+		existing := &domain.Person{ID: 7, Name: "Alice", Age: 30, Address: "Addr", Work: "Work"}
 		updated := &domain.Person{ID: 7, Name: "Bob", Age: 40, Address: "NewAddr", Work: "NewWork"}
+		repo.On("GetByID", mock.Anything, int32(7)).Return(existing, nil)
 		repo.On("Update", mock.Anything, int32(7), mock.MatchedBy(func(p *domain.Person) bool {
-			return p.Name == "Bob" && p.Age == 40
+			return p.Name == "Bob" && p.Age == 40 && p.Address == "NewAddr" && p.Work == "NewWork"
 		})).Return(updated, nil)
 
 		body := `{"name":"Bob","age":40,"address":"NewAddr","work":"NewWork"}`
@@ -170,9 +172,32 @@ func TestHandler_Update(t *testing.T) {
 		assert.Equal(t, int32(40), got.Age)
 	})
 
+	t.Run("updates only fields present in request", func(t *testing.T) {
+		repo := new(mockPersonRepository)
+		existing := &domain.Person{ID: 7, Name: "Alice", Age: 30, Address: "Addr", Work: "Work"}
+		updated := &domain.Person{ID: 7, Name: "Alice", Age: 45, Address: "Addr", Work: "Work"}
+		repo.On("GetByID", mock.Anything, int32(7)).Return(existing, nil)
+		repo.On("Update", mock.Anything, int32(7), mock.MatchedBy(func(p *domain.Person) bool {
+			return p.Name == "Alice" && p.Age == 45 && p.Address == "Addr" && p.Work == "Work"
+		})).Return(updated, nil)
+
+		body := `{"age":45}`
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/persons/7/", bytes.NewBufferString(body))
+		rec := httptest.NewRecorder()
+
+		newTestRouter(repo).ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		var got persondto.PersonResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+		assert.Equal(t, "Alice", got.Name)
+		assert.Equal(t, int32(45), got.Age)
+		repo.AssertExpectations(t)
+	})
+
 	t.Run("not found returns 404", func(t *testing.T) {
 		repo := new(mockPersonRepository)
-		repo.On("Update", mock.Anything, int32(99), mock.Anything).Return(nil, domain.ErrPersonNotFound)
+		repo.On("GetByID", mock.Anything, int32(99)).Return(nil, domain.ErrPersonNotFound)
 
 		body := `{"name":"Bob","age":40}`
 		req := httptest.NewRequest(http.MethodPatch, "/api/v1/persons/99/", bytes.NewBufferString(body))
@@ -181,6 +206,7 @@ func TestHandler_Update(t *testing.T) {
 		newTestRouter(repo).ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusNotFound, rec.Code)
+		repo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("non-numeric id returns 404", func(t *testing.T) {
@@ -193,19 +219,32 @@ func TestHandler_Update(t *testing.T) {
 		newTestRouter(repo).ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusNotFound, rec.Code)
+		repo.AssertNotCalled(t, "GetByID", mock.Anything, mock.Anything)
 		repo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("invalid body returns 400", func(t *testing.T) {
 		repo := new(mockPersonRepository)
 
-		req := httptest.NewRequest(http.MethodPatch, "/api/v1/persons/7/", bytes.NewBufferString(`{"age":40}`))
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/persons/7/", bytes.NewBufferString(`{"age":-5}`))
 		rec := httptest.NewRecorder()
 
 		newTestRouter(repo).ServeHTTP(rec, req)
 
 		assert.Equal(t, http.StatusBadRequest, rec.Code)
+		repo.AssertNotCalled(t, "GetByID", mock.Anything, mock.Anything)
 		repo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("malformed json returns 400", func(t *testing.T) {
+		repo := new(mockPersonRepository)
+
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/persons/7/", bytes.NewBufferString("{not json"))
+		rec := httptest.NewRecorder()
+
+		newTestRouter(repo).ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
 	})
 }
 

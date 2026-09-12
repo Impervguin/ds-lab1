@@ -100,13 +100,26 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, err := dto.DeserializePersonRequest(r)
+	req, err := dto.DeserializePersonPatchRequest(r)
 	if err != nil {
 		common.WriteValidationError(w, "invalid request body", nil)
 		return
 	}
 
-	updated, err := h.repo.Update(r.Context(), id, req.ToDomain())
+	existing, err := h.repo.GetByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, domain.ErrPersonNotFound) {
+			common.WriteError(w, http.StatusNotFound, "person not found")
+			return
+		}
+		log.Printf("get person: %v", err)
+		common.WriteError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	req.ApplyTo(existing)
+
+	updated, err := h.repo.Update(r.Context(), id, existing)
 	if err != nil {
 		if errors.Is(err, domain.ErrPersonNotFound) {
 			common.WriteError(w, http.StatusNotFound, "person not found")
