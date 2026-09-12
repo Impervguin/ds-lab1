@@ -23,7 +23,7 @@ func (h *Handler) Register(r chi.Router) {
 }
 
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
-	if h.service.IsReady(r.Context()) {
+	if !h.service.IsReady(r.Context()) {
 		common.WriteJSON(w, http.StatusServiceUnavailable, dto.HealthResponse{Status: "DOWN"})
 		return
 	}
