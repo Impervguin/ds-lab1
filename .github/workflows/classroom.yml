@@ -9,6 +9,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  RENDER_APP_URL: https://ds-lab1-nbsd.onrender.com/
 
 
 jobs:
@@ -67,9 +68,30 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Trigger Render deploy
+        run: |
+          curl -fsS -X GET "${RENDER_HOOK}&imgURL=${IMG_URL}"
+        env:
+          RENDER_HOOK: ${{ secrets.RENDER_HOOK }}
+          IMG_URL: ${{ steps.image.outputs.name }}:${{ github.sha }}
+
+  wait-for-healthy:
+    name: Wait for service to be healthy
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for /health to return 200
+        timeout-minutes: 5
+        run: |
+          until curl -fsS "${RENDER_APP_URL%/}/health"; do
+            echo "service not healthy yet, retrying in 5s..."
+            sleep 5
+          done
+          echo "service is healthy"
+
   autograding:
     name: Autograding
-    needs: build
+    needs: wait-for-healthy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3

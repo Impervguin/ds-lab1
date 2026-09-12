@@ -11,9 +11,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	healthHandler "github.com/Impervguin/ds-lab1/internal/handlers/health"
 	personHandler "github.com/Impervguin/ds-lab1/internal/handlers/person"
 	"github.com/Impervguin/ds-lab1/internal/migrations"
 	personRepo "github.com/Impervguin/ds-lab1/internal/repository/pgx/person"
+	healthService "github.com/Impervguin/ds-lab1/internal/service/health"
 )
 
 func main() {
@@ -41,12 +43,16 @@ func main() {
 
 	repo := personRepo.NewPgxPersonRepository(pool)
 	handler := personHandler.NewHandler(repo)
+	hs := healthService.NewService(pool)
+	health := healthHandler.NewHandler(hs)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	handler.Register(r)
+	health.Register(r)
 
+	hs.SetReady()
 	log.Printf("starting server on %s", cfg.ServerAddr)
 	if err := http.ListenAndServe(cfg.ServerAddr, r); err != nil {
 		log.Fatalf("server error: %v", err)
